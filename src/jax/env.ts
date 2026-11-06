@@ -121,14 +121,15 @@ function observation(battery: Arr, storage: Arr, u0: Arr, theta0: Arr, t: Arr, d
     );
 }
 
-export interface StepOutput {
+// A `type` alias, not an `interface`: jax-js tree types require an implicit index signature.
+export type StepOutput = {
     battery: Arr; // [B, N]
     storage: Arr; // [B, N]
     reward: Arr; // [B, N]
     delivered: Arr; // [B] storage units delivered this step
     brownouts: Arr; // [B] satellites in safe mode after this step
     obs: Arr; // [B, N, OBS_DIM]
-}
+};
 
 function stepImpl(
     battery: Arr,

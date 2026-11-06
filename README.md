@@ -3,74 +3,91 @@
 A small reinforcement-learning environment for satellite fleet operations, meant to run
 entirely in the browser on [jax-js](https://github.com/ekzhang/jax-js) (WebGPU / Wasm).
 
-A constellation of 12 imaging satellites (3 planes x 4) must decide, every minute, whether to
-**image**, **downlink**, or **idle/charge**, subject to battery, onboard storage, eclipse
-cycles, and ground-station contention (each station serves one satellite per step). Reward is
-the amount of data actually delivered to the ground, minus a penalty for brownouts.
-
-## Status
-
-| Piece | State |
-| --- | --- |
-| Reference simulator (plain TypeScript, `src/sim`) | Done, tested |
-| Greedy and random baselines | Done |
-| Vectorized jax-js environment (`src/jax/env.ts`, `jit` over `[batch, sats]`) | Done, matches the reference |
-| PPO trainer (`@jax-js/optax`) | Not started |
-| Browser UI (ground tracks, reward curves, WebGPU) | Not started |
-
-The reference simulator is deliberately scalar and loop-based. `src/jax/parity.test.ts` runs it
-side by side with the jax-js environment (3 seeds, 360 steps, identical random actions) and
-compares observations, rewards, battery, storage and delivered data. Current result: max
-absolute difference 7e-6, zero mismatches.
+Twelve imaging satellites (3 orbital planes x 4) share four ground stations. Every minute a
+policy decides, for each satellite, whether to **image**, **downlink** or **idle/charge**,
+subject to battery, onboard storage, eclipse cycles and ground-station contention (a station
+serves one satellite per step). Reward is the amount of data delivered to the ground, minus a
+small penalty for running a battery flat.
 
 ## Run it
 
-Requires Node 18 or newer. Tests, baselines and the benchmark run through `tsx`, and were
-checked on Node 18.20.8 and Node 22.23.4. Older Node versions need a few Node-only shims for
-jax-js, which `src/jax/polyfill.ts` provides (see below).
+Requires Node 18 or newer.
 
 ```
-git clone <https://github.com/shrutix/fleet-ops-gym.git>
-cd fleet-ops-gym
-
 npm install
-npm test            # reference simulator tests + jax-js parity test
-npm run baselines   # random vs greedy returns
-npm run bench       # vectorized env throughput on the Wasm backend
+npm run dev          # the app, with live training in a web worker
+npm test             # simulator, jax-js parity and PPO tests
+npm run train -- --iters 150 --envs 16 --out public/pretrained.json
 ```
 
-Baselines (16 episodes, 360 steps each):
+Other scripts: `npm run build`, `npm run preview`, `npm run typecheck`, `npm run baselines`,
+`npm run bench`.
 
-```
-random   delivered=8.81   reward=88.0   brownout-steps=2.9
-greedy   delivered=20.43  reward=204.3  brownout-steps=0.0
-```
+The app loads `public/pretrained.json` (the policy trained below) so the replay works at once.
+"Train" continues from the loaded weights; "Start over" trains from random weights.
 
-A sweep over the greedy thresholds found settings about 10% better (delivered 22.5), so a
-learned policy has to beat that, not just the default.
+## Results
 
-Throughput of the jit-compiled step on Wasm in Node (float32, single run, no WebGPU available
-in Node): about 14-16k environment-steps per second, scaling linearly with batch size.
-WebGPU numbers have not been measured; run `npm run bench`-style code in a browser to get them.
+Mean over 32 held-out seeds (5000 to 5031). Training episodes use a different seed range.
 
-## jax-js notes (version 0.1.27)
+| Policy | Data delivered (buffers) | Reward |
+| --- | --- | --- |
+| Random | 8.9 | 89 |
+| Greedy (default thresholds) | 21.0 | 210 |
+| Tuned greedy (thresholds swept on other seeds) | 23.1 | 231 |
+| **Learned policy, PPO, 150 iterations** | **23.8** | **237** |
 
-Things that cost time and are worth knowing:
+The learned policy beats the tuned greedy by **+5.4 reward (standard error 0.5, paired over the
+same 32 seeds)**, which is about 2%. The effect is real but modest, and the evidence is one
+training run (seed 0) on one fleet layout. Worth knowing:
 
-- **No `scan` or `while_loop`.** Rollouts are a JS loop calling the jitted step function.
+- Training took about 8 minutes on Wasm in Node. Learning is steady rather than sudden: the
+  policy reaches the tuned greedy's level after about 50 iterations and keeps edging past it.
+- A shorter 60-iteration run was statistically tied with the tuned greedy (-0.8 +/- 1.1).
+- In this environment a failed downlink costs nothing, so the policy uses "downlink" as a free
+  idle. That is why the map shows many hollow diamonds ("downlink not granted").
+- Per-seed scores vary a lot (standard deviation about 52), so always compare policies on the
+  same seeds, as `train.ts` does, rather than comparing means from different runs.
+
+## Structure
+
+| Path | What it is |
+| --- | --- |
+| `src/sim/` | Reference simulator in plain TypeScript: the ground truth. Tested. |
+| `src/jax/env.ts` | The same environment vectorized over `[batch, satellites]` and jit-compiled with jax-js. |
+| `src/jax/parity.test.ts` | Runs both side by side on random actions: max difference 7e-6, zero mismatches. |
+| `src/rl/network.ts` | Actor-critic MLP (2 x 64, tanh) shared by all satellites. |
+| `src/rl/ppo.ts` | Rollouts through the jax-js env, GAE, clipped PPO with `@jax-js/optax` Adam. |
+| `src/rl/evaluate.ts` | Scores any policy on the reference simulator; records episodes for the UI. |
+| `src/ui/` | The app: worker, ground-track map, charts. |
+
+Every satellite is an agent with the same weights, so one batch holds `envs x 12` agents.
+There is no `scan` in this version of jax-js, so rollouts are a JavaScript loop over a jitted
+step.
+
+## Current Limitations
+
+- Orbits are circular, the sun direction is fixed and ground contact is a simple cone.
+- Satellites do not see each other, so contention for a station is handled only implicitly.
+- Cross-origin isolation headers are set in `vite.config.ts` so Wasm can use threads. If you
+  deploy elsewhere, serve `Cross-Origin-Opener-Policy: same-origin` and
+  `Cross-Origin-Embedder-Policy: require-corp`, or Wasm runs single-threaded.
+
+## jax-js notes (0.1.27)
+
+- **No `scan` or `while_loop`.** Rollouts are a JS loop calling the jitted step.
 - **Ownership.** Functions consume their array arguments; pass `x.ref` for every use except the
-  last. This includes `optimizer.init(params)`, which takes ownership of `params`.
-- **`slice`:** `[]` keeps an axis (like `:`), `null` adds a new axis (like `np.newaxis`), a number
-  indexes and removes the axis. `slice(null, null, 2)` is not "the third column".
-- **`np.allclose` returns a plain boolean**, not an array.
-- **jax-js assumes a modern JS runtime.** It reads `Float16Array` (float64 arrays throw
-  `Float16Array is not defined` before Node 24), `navigator` (missing before Node 21), and calls
-  `Array.prototype.toSpliced` / `toReversed` (missing before Node 20). `src/jax/polyfill.ts`
-  shims exactly these for Node scripts and tests; browsers need none of it. float32, which is
-  what you want on WebGPU anyway, is unaffected by the `Float16Array` gap.
+  last. `optimizer.init(params)` also takes ownership of `params`.
+- **Tree types need `type`, not `interface`.** An `interface` has no implicit index signature,
+  so it is rejected as a `JsTree`.
+- **`slice`:** `[]` keeps an axis, `null` adds one, a number indexes and removes it.
+- **A worker resolves relative URLs against its own script**, not the page. Pass it an absolute
+  URL for any file it fetches.
+- **jax-js assumes a modern runtime.** It reads `Float16Array`, `navigator`, and calls
+  `Array.prototype.toSpliced` / `toReversed`. `src/jax/polyfill.ts` shims these for Node
+  scripts (Node 18 to 23); browsers need none of it.
 
-## Known limitations
 
-- Orbits are circular and the sun direction is fixed; ground contact is a simple cone.
-- Imaging-limited regime: simple threshold rules are already close to saturated, so the real
-  test is whether lookahead features (`demand_ahead`, `contact_ahead`) give PPO an edge.
+## License
+
+This project is released under the [MIT License](LICENSE).

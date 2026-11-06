@@ -127,6 +127,12 @@ export class FleetEnv {
     totalDelivered = 0;
     totalBrownouts = 0;
 
+    /**
+     * What each satellite actually did in the last step (for visualization only):
+     * 0 idle, 1 imaging, 2 downlinking, 3 downlink requested but not granted, 4 safe mode.
+     */
+    lastStatus = new Uint8Array(NUM_SATS);
+
     private raan = new Float64Array(NUM_SATS);
     private u0 = new Float64Array(NUM_SATS);
     private theta0 = 0;
@@ -163,6 +169,11 @@ export class FleetEnv {
         this.totalDelivered = 0;
         this.totalBrownouts = 0;
         return this.observe();
+    }
+
+    /** Earth rotation angle (radians) at a step index. */
+    thetaAt(stepIndex: number): number {
+        return this.theta0 + OMEGA_EARTH * stepIndex * DT;
     }
 
     geometry(i: number, stepIndex: number): Geometry {
@@ -224,6 +235,15 @@ export class FleetEnv {
         for (let i = 0; i < NUM_SATS; i++) {
             let power = -P_BASE + (geo[i].sunlit ? P_SOLAR : 0);
             const action = safe[i] ? ACTION_IDLE : actions[i];
+            this.lastStatus[i] = safe[i]
+                ? 4
+                : action === ACTION_IMAGE
+                    ? 1
+                    : granted[i]
+                        ? 2
+                        : action === ACTION_DOWNLINK
+                            ? 3
+                            : 0;
 
             if (action === ACTION_IMAGE) {
                 power -= P_IMAGE;

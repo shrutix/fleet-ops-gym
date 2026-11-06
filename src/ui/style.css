@@ -1,0 +1,667 @@
+/* Fleet ops gym. A survey-chart look: cool paper, ink, one ultramarine for the learned policy.
+   Status colors on the map (amber, teal, crimson) were checked with the palette validator in
+   both modes; markers also differ by shape, so color is never the only signal. */
+
+:root {
+  --paper: #edf1f4;
+  --panel: #fbfcfd;
+  --ink: #0f2230;
+  --muted: #566774;
+  --rule: #cbd5dc;
+  --learned: #2347d6;
+  --tuned: #2b3a46;
+  --greedy: #7b8b97;
+  --random: #a3b0ba;
+  --image: #b26b00;
+  --link: #0a8a7a;
+  --alert: #c23b3b;
+  --idle: #6c7b87;
+  --map-sea: #dce8ee;
+  --map-night: rgba(15, 42, 61, 0.3);
+  --map-grid: rgba(15, 34, 48, 0.14);
+  --map-demand: rgba(124, 90, 168, 0.3);
+  --focus: #2347d6;
+  --radius: 6px;
+  --sans: "Archivo Variable", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #0b1318;
+    --panel: #111c24;
+    --ink: #e4ecf0;
+    --muted: #96a7b3;
+    --rule: #243541;
+    --learned: #86a0ff;
+    --tuned: #c7d3db;
+    --greedy: #8c9ca8;
+    --random: #62727e;
+    --image: #c47b10;
+    --link: #25a592;
+    --alert: #d95555;
+    --idle: #8c9ca8;
+    --map-sea: #0f2230;
+    --map-night: rgba(0, 0, 0, 0.4);
+    --map-grid: rgba(255, 255, 255, 0.08);
+    --map-demand: rgba(160, 128, 210, 0.3);
+    --focus: #86a0ff;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 15px/1.5 var(--sans);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+/* ---- masthead ------------------------------------------------------------------------- */
+
+.masthead {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 36px 24px 20px;
+}
+
+h1,
+h2 {
+  font-stretch: 72%;
+  font-weight: 800;
+  letter-spacing: 0.005em;
+  line-height: 1;
+  margin: 0;
+}
+
+h1 {
+  font-size: clamp(44px, 7vw, 76px);
+}
+
+h2 {
+  font-size: 26px;
+}
+
+h3 {
+  font-size: 15px;
+  font-weight: 650;
+  margin: 26px 0 2px;
+}
+
+.lede {
+  max-width: 64ch;
+  margin: 14px 0 0;
+  font-size: 17px;
+  color: var(--ink);
+}
+
+.device {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ---- layout --------------------------------------------------------------------------- */
+
+main {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 0 24px 56px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
+  gap: 20px 32px;
+  align-items: start;
+}
+
+.stage,
+.rail,
+.training {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.training {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 960px) {
+  main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .masthead,
+  main {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .stage,
+  .rail,
+  .training {
+    padding: 16px;
+  }
+}
+
+/* ---- controls ------------------------------------------------------------------------- */
+
+button,
+select,
+input[type="number"] {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--rule);
+  background: transparent;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--panel);
+  font-weight: 600;
+  min-width: 84px;
+}
+
+button.quiet {
+  color: var(--ink);
+}
+
+select,
+input[type="number"] {
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--rule);
+  background: var(--panel);
+}
+
+input[type="number"] {
+  width: 96px;
+}
+
+.stage-bar,
+.train-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  margin-bottom: 16px;
+}
+
+.stage-bar h2,
+.train-bar h2 {
+  margin-right: auto;
+}
+
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.seg button {
+  border: 0;
+  border-radius: 0;
+  border-right: 1px solid var(--rule);
+}
+
+.seg button:last-child {
+  border-right: 0;
+}
+
+.seg button[aria-checked="true"] {
+  background: var(--ink);
+  color: var(--panel);
+  font-weight: 600;
+}
+
+.seed,
+.device-pick,
+.speed {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ---- map ------------------------------------------------------------------------------ */
+
+.map-wrap {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--map-sea);
+  border: 1px solid var(--rule);
+}
+
+#map {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 1;
+}
+
+.map-status {
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  margin: 0;
+  padding: 3px 9px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend svg {
+  width: 16px;
+  height: 16px;
+}
+
+.k-image {
+  fill: var(--image);
+}
+.k-link {
+  fill: var(--link);
+}
+.k-link-o {
+  fill: none;
+  stroke: var(--link);
+  stroke-width: 1.75;
+}
+.k-alert {
+  fill: var(--alert);
+}
+.k-idle {
+  fill: none;
+  stroke: var(--idle);
+  stroke-width: 1.75;
+}
+.k-demand {
+  fill: var(--map-demand);
+}
+.k-ring {
+  fill: none;
+  stroke: var(--muted);
+  stroke-dasharray: 2.5 2.5;
+}
+
+/* ---- timeline ------------------------------------------------------------------------- */
+
+.timeline {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+@media (max-width: 640px) {
+  .timeline {
+    grid-template-columns: auto 1fr;
+  }
+  .timeline output,
+  .timeline .speed {
+    grid-column: 1 / -1;
+  }
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--learned);
+}
+
+output {
+  min-width: 11ch;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/* ---- fleet strip ---------------------------------------------------------------------- */
+
+.fleet {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 18px;
+}
+
+@media (max-width: 520px) {
+  .fleet {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* On a phone the map is small, so the status line moves below it instead of covering it. */
+@media (max-width: 640px) {
+  .map-status {
+    position: static;
+    border-radius: 0;
+    background: var(--panel);
+    padding: 8px 10px;
+  }
+}
+
+.sat {
+  display: grid;
+  gap: 4px;
+  padding: 8px 8px 9px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  font-size: 12px;
+}
+
+.sat-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-weight: 650;
+}
+
+.sat-glyph {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.meter {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--rule);
+  overflow: hidden;
+}
+
+.meter i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--ink);
+  transition: width 120ms linear;
+}
+
+.meter.low i {
+  background: var(--alert);
+}
+
+.meter.data i {
+  background: var(--image);
+}
+
+.sat-label {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.s-1 .sat-glyph {
+  color: var(--image);
+}
+.s-2 .sat-glyph,
+.s-3 .sat-glyph {
+  color: var(--link);
+}
+.s-4 .sat-glyph {
+  color: var(--alert);
+}
+.s-0 .sat-glyph {
+  color: var(--idle);
+}
+.s-4 {
+  border-color: var(--alert);
+}
+
+/* ---- rail: tables and charts ---------------------------------------------------------- */
+
+.figures {
+  width: 100%;
+  margin-top: 14px;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.figures th,
+.figures td {
+  padding: 7px 0;
+  text-align: left;
+  border-bottom: 1px solid var(--rule);
+}
+
+.figures thead th {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.figures .num {
+  text-align: right;
+  padding-left: 10px;
+  white-space: nowrap;
+}
+
+.figures tr.lead td,
+.figures tr.lead th {
+  font-weight: 700;
+}
+
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 8px;
+  border-radius: 2px;
+  vertical-align: baseline;
+}
+
+.hint {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  max-width: 68ch;
+}
+
+.up {
+  color: var(--link);
+}
+.down {
+  color: var(--alert);
+}
+
+.chart {
+  position: relative;
+  margin-top: 10px;
+}
+
+.scrub-chart {
+  touch-action: none;
+  cursor: col-resize;
+}
+
+.chart svg {
+  display: block;
+  overflow: visible;
+}
+
+.chart .grid {
+  stroke: var(--rule);
+  stroke-width: 1;
+}
+.chart .axis {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+.chart .tick,
+.chart .axis-title {
+  fill: var(--muted);
+  font-size: 11px;
+}
+.chart .direct {
+  font-size: 12px;
+  font-weight: 650;
+}
+.chart .playhead {
+  stroke: var(--ink);
+  stroke-width: 1.5;
+}
+.chart .crosshair {
+  stroke: var(--muted);
+  stroke-dasharray: 3 3;
+}
+.chart .dot,
+.chart .focus {
+  stroke: var(--panel);
+  stroke-width: 2;
+}
+
+.tip {
+  position: absolute;
+  top: 4px;
+  min-width: 150px;
+  padding: 7px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--panel);
+  font-size: 12px;
+  line-height: 1.6;
+  pointer-events: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+}
+
+.tip b {
+  float: right;
+  margin-left: 14px;
+}
+
+.tip-head {
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.sw {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 2px;
+}
+
+/* ---- training ------------------------------------------------------------------------- */
+
+.source {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.progress {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--rule);
+  overflow: hidden;
+}
+
+.progress i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--learned);
+  transition: width 200ms ease-out;
+}
+
+.vitals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 36px;
+  margin: 14px 0 4px;
+}
+
+.vitals div {
+  display: flex;
+  flex-direction: column;
+}
+
+.vitals dt {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.vitals dd {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+}
+
+#alert {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 10px 24px;
+  background: var(--alert);
+  color: #fff;
+  font-size: 14px;
+  white-space: pre-wrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meter i,
+  .progress i {
+    transition: none;
+  }
+}

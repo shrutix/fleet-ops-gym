@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Fleet ops gym</title>
+    <meta
+      name="description"
+      content="Train a reinforcement-learning scheduler for an imaging satellite fleet in your browser, built on jax-js."
+    />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232347d6'/%3E%3Cpath d='M5 21c6-1 12-6 22-12' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='15' r='3.4' fill='white'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <div id="alert" role="alert" hidden></div>
+
+    <header class="masthead">
+      <h1>Fleet ops gym</h1>
+      <p class="lede">
+        Twelve imaging satellites share four ground stations. A neural policy decides every minute
+        whether each one images, downlinks or charges. Train it in this tab, then replay it against
+        rule-based schedulers on the same orbits.
+      </p>
+      <p class="device" id="device-note" aria-live="polite">Starting the compute backend</p>
+    </header>
+
+    <main>
+      <section class="stage" aria-labelledby="stage-title">
+        <div class="stage-bar">
+          <h2 id="stage-title">Replay</h2>
+          <div class="seg" role="radiogroup" aria-label="Policy shown on the map" id="policy-tabs">
+            <button role="radio" aria-checked="true" data-policy="learned">Learned policy</button>
+            <button role="radio" aria-checked="false" data-policy="tuned">Tuned greedy</button>
+            <button role="radio" aria-checked="false" data-policy="greedy">Greedy</button>
+          </div>
+          <div class="seed">
+            <label for="seed">Seed</label>
+            <input id="seed" type="number" inputmode="numeric" value="4242" min="0" step="1" />
+            <button id="new-seed" class="quiet" type="button">New seed</button>
+          </div>
+        </div>
+
+        <div class="map-wrap">
+          <canvas id="map" role="img" aria-label="Map of satellite ground tracks, ground stations and imaging demand"></canvas>
+          <p class="map-status" id="map-status" aria-live="polite">Waiting for the first replay</p>
+        </div>
+
+        <ul class="legend" aria-label="Map legend">
+          <li><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5" class="k-image"/></svg>Imaging</li>
+          <li><svg viewBox="0 0 16 16"><path d="M8 2 14 8 8 14 2 8Z" class="k-link"/></svg>Downlinking</li>
+          <li><svg viewBox="0 0 16 16"><path d="M8 2 14 8 8 14 2 8Z" class="k-link-o"/></svg>Downlink not granted</li>
+          <li><svg viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" class="k-alert"/></svg>Safe mode</li>
+          <li><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="4" class="k-idle"/></svg>Idle</li>
+          <li><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" class="k-demand"/></svg>Imaging demand</li>
+          <li><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" class="k-ring"/></svg>Station range</li>
+        </ul>
+
+        <div class="timeline">
+          <button id="play" type="button" class="primary" disabled>Play</button>
+          <input id="scrub" type="range" min="0" max="360" value="0" step="1" aria-label="Minute of the episode" disabled />
+          <output id="minute" for="scrub">Minute 0 of 360</output>
+          <label class="speed">
+            Speed
+            <select id="speed">
+              <option value="1">1x</option>
+              <option value="2">2x</option>
+              <option value="4" selected>4x</option>
+              <option value="8">8x</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="fleet" id="fleet" aria-label="Per-satellite battery, stored data and status"></div>
+      </section>
+
+      <aside class="rail" aria-labelledby="rail-title">
+        <h2 id="rail-title">Same seed, three schedulers</h2>
+        <table class="figures" id="seed-table">
+          <caption class="sr">Data delivered on the replay seed</caption>
+          <thead>
+            <tr><th scope="col">Policy</th><th scope="col" class="num">Data delivered</th><th scope="col" class="num">Reward</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <h3>Data delivered over time</h3>
+        <p class="hint">Drag across the chart to move the replay.</p>
+        <div id="race" class="scrub-chart"></div>
+
+        <h3>Average over 32 held-out seeds</h3>
+        <table class="figures" id="heldout-table">
+          <caption class="sr">Mean score over 32 held-out seeds</caption>
+          <thead>
+            <tr><th scope="col">Policy</th><th scope="col" class="num">Data delivered</th><th scope="col" class="num">Reward</th><th scope="col" class="num">Against tuned</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p class="hint">Data delivered is counted in full onboard buffers. Reward adds a small penalty for running a battery flat.</p>
+      </aside>
+
+      <section class="training" aria-labelledby="train-title">
+        <div class="train-bar">
+          <h2 id="train-title">Training</h2>
+          <div class="actions">
+            <button id="train" type="button" class="primary" disabled>Train</button>
+            <button id="pretrained" type="button" class="quiet" disabled>Load pretrained policy</button>
+            <button id="reset" type="button" class="quiet" disabled>Start over</button>
+          </div>
+          <label class="device-pick">
+            Compute
+            <select id="device">
+              <option value="auto" selected>Automatic</option>
+              <option value="webgpu">WebGPU</option>
+              <option value="wasm">Wasm (CPU)</option>
+            </select>
+          </label>
+        </div>
+        <p class="source" id="policy-source" aria-live="polite">Starting the compute backend.</p>
+        <div id="progress" class="progress" role="progressbar" aria-label="Training progress" aria-valuemin="0" aria-valuemax="120" aria-valuenow="0"><i></i></div>
+        <dl class="vitals" id="vitals">
+          <div><dt>Iteration</dt><dd id="v-iter">0 of 120</dd></div>
+          <div><dt>Speed</dt><dd id="v-speed">–</dd></div>
+          <div><dt>Exploration</dt><dd id="v-entropy">–</dd></div>
+          <div><dt>Policy drift</dt><dd id="v-kl">–</dd></div>
+        </dl>
+        <div id="curve"></div>
+        <p class="hint">
+          Each iteration plays 16 full episodes with the current policy, then updates it with
+          proximal policy optimization. The solid line scores the policy's best action on held-out
+          seeds every 10 iterations.
+        </p>
+      </section>
+    </main>
+
+    <script type="module" src="/src/ui/main.ts"></script>
+  </body>
+</html>
