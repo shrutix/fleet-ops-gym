@@ -3,11 +3,13 @@
 A small reinforcement-learning environment for satellite fleet operations, meant to run
 entirely in the browser on [jax-js](https://github.com/ekzhang/jax-js) (WebGPU / Wasm).
 
-Twelve imaging satellites (3 orbital planes x 4) share four ground stations. Every minute a
+12 imaging satellites (3 orbital planes x 4) share four ground stations. Every minute a
 policy decides, for each satellite, whether to **image**, **downlink** or **idle/charge**,
 subject to battery, onboard storage, eclipse cycles and ground-station contention (a station
 serves one satellite per step). Reward is the amount of data delivered to the ground, minus a
 small penalty for running a battery flat.
+
+![Video example of policy & training in browser UI](docs/example1-learnedPolicy4242gif.gif)
 
 ## Run it
 
